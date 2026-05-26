@@ -6,7 +6,7 @@ import { conversationsRouter } from './routes/conversations.js';
 import { messagesRouter } from './routes/messages.js';
 import { settingsRouter } from './routes/settings.js';
 import { usersRouter } from './routes/users.js';
-import { webhookRouter } from './routes/webhook.js';
+import { handleWebhookVerification, webhookRouter } from './routes/webhook.js';
 import { apiLimiter, corsMiddleware, helmetMiddleware } from './middleware/security.js';
 import { logger } from './logger.js';
 
@@ -29,8 +29,18 @@ app.use(
   })
 );
 
+app.get('/', (req, res) => {
+  if (req.query['hub.mode'] || req.query['hub.verify_token'] || req.query['hub.challenge']) {
+    return handleWebhookVerification(req, res);
+  }
+
+  return res.json({
+    status: 'ok',
+    service: 'central-pamda-backend',
+    webhook: '/api/webhook'
+  });
+});
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-app.use('/', webhookRouter);
 app.use('/webhook', webhookRouter);
 
 app.use('/api/auth', authRouter);

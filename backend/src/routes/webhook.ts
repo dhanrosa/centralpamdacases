@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { env } from '../config.js';
 
 export const webhookRouter = Router();
 
-webhookRouter.get('/', (req, res) => {
+export function handleWebhookVerification(req: Request, res: Response) {
   console.log('Webhook verification request received', {
     mode: req.query['hub.mode'],
     hasVerifyToken: Boolean(req.query['hub.verify_token']),
@@ -21,7 +22,9 @@ webhookRouter.get('/', (req, res) => {
 
   console.log('Webhook verification failed');
   return res.sendStatus(403);
-});
+}
+
+webhookRouter.get('/', handleWebhookVerification);
 
 webhookRouter.post('/', (req, res) => {
   console.log('WhatsApp webhook POST received', JSON.stringify(req.body, null, 2));
