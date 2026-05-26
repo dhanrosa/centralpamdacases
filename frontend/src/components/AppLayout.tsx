@@ -24,14 +24,14 @@ export function AppLayout() {
           </NavLink>
           <NavLink to="/configuracoes">
             <Settings size={18} aria-hidden />
-            Configurações
+            Configuracoes
           </NavLink>
         </nav>
 
         <div className="profile">
           <div>
             <strong>Acesso interno</strong>
-            <span>Painel sem login</span>
+            <span>Sem login inicial</span>
           </div>
         </div>
       </aside>

@@ -1,12 +1,21 @@
 import type { NextFunction, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config.js';
+import { findHardcodedUser, toPublicUser } from '../hardcoded-users.js';
 import type { AuthRequest, AuthUser, Role } from '../types.js';
+
+const internalUser = toPublicUser(findHardcodedUser('dhanrosa')!);
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
 
   if (!header?.startsWith('Bearer ')) {
+    req.user = {
+      id: internalUser.id,
+      name: internalUser.name,
+      username: internalUser.username,
+      role: internalUser.role
+    };
     return next();
   }
 
@@ -22,7 +31,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 export function requireRole(roles: Role[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return next();
+      return res.status(401).json({ message: 'Login necessario.' });
     }
 
     if (!roles.includes(req.user.role)) {
@@ -32,4 +41,3 @@ export function requireRole(roles: Role[]) {
     return next();
   };
 }
-

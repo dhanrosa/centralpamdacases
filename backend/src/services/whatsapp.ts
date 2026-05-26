@@ -6,6 +6,10 @@ interface SendTextParams {
 }
 
 export async function sendWhatsAppTextMessage({ to, text }: SendTextParams) {
+  if (!env.WHATSAPP_PHONE_NUMBER_ID || !env.WHATSAPP_ACCESS_TOKEN) {
+    throw new Error('WhatsApp Cloud API nao configurada. Preencha WHATSAPP_PHONE_NUMBER_ID e WHATSAPP_ACCESS_TOKEN no .env.');
+  }
+
   const url = `https://graph.facebook.com/${env.WHATSAPP_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
   const response = await fetch(url, {
@@ -34,4 +38,3 @@ export async function sendWhatsAppTextMessage({ to, text }: SendTextParams) {
 
   return data as { messages?: Array<{ id: string }> };
 }
-

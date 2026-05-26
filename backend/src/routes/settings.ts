@@ -8,6 +8,15 @@ export const settingsRouter = Router();
 
 settingsRouter.use(requireAuth);
 
+function publicSettings() {
+  return {
+    whatsappApiVersion: env.WHATSAPP_API_VERSION,
+    whatsappPhoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+    webhookPath: '/webhook',
+    tokenExposedToFrontend: false
+  };
+}
+
 settingsRouter.get('/', async (_req, res, next) => {
   try {
     const { rows } = await query('select key, value, updated_at from settings order by key asc');
@@ -20,6 +29,10 @@ settingsRouter.get('/', async (_req, res, next) => {
       tokenExposedToFrontend: false
     });
   } catch (error) {
+    if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
+      return res.json(publicSettings());
+    }
+
     return next(error);
   }
 });
@@ -43,4 +56,3 @@ settingsRouter.put('/', requireRole(['admin']), async (req, res, next) => {
     return next(error);
   }
 });
-

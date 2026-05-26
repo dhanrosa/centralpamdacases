@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Send } from 'lucide-react';
-import { apiFetch } from '../api';
+import { CheckCircle, Send, UserCheck } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { apiFetch, SOCKET_URL } from '../api';
 import { StatusBadge } from '../components/StatusBadge';
 import type { ConversationDetail, Message, Note } from '../types';
 
@@ -28,6 +29,21 @@ export function ChatPage() {
     load();
   }, [id]);
 
+  useEffect(() => {
+    const socket = io(SOCKET_URL);
+    const reloadIfCurrent = (payload: { conversation_id?: string; id?: string }) => {
+      if (payload.conversation_id === id || payload.id === id) {
+        load();
+      }
+    };
+    socket.on('message:received', reloadIfCurrent);
+    socket.on('message:sent', reloadIfCurrent);
+    socket.on('conversation:updated', reloadIfCurrent);
+    return () => {
+      socket.disconnect();
+    };
+  }, [id]);
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     if (!id || !message.trim()) return;
@@ -36,7 +52,7 @@ export function ChatPage() {
     try {
       await apiFetch('/messages/send', {
         method: 'POST',
-        body: JSON.stringify({ conversationId: id, text: message })
+        body: JSON.stringify({ conversation_id: id, body: message })
       });
       setMessage('');
       await load();
@@ -59,10 +75,16 @@ export function ChatPage() {
 
   async function setStatus(status: ConversationDetail['status']) {
     if (!id) return;
-    await apiFetch(`/conversations/${id}`, {
-      method: 'PATCH',
+    await apiFetch(`/conversations/${id}/status`, {
+      method: 'POST',
       body: JSON.stringify({ status })
     });
+    await load();
+  }
+
+  async function assignToMe() {
+    if (!id) return;
+    await apiFetch(`/conversations/${id}/assign`, { method: 'POST', body: JSON.stringify({}) });
     await load();
   }
 
@@ -75,8 +97,8 @@ export function ChatPage() {
       <div className="chat-main">
         <header className="chat-header">
           <div>
-            <h1>{detail.conversation.contact_name || detail.conversation.phone_number}</h1>
-            <p>{detail.conversation.phone_number}</p>
+            <h1>{detail.conversation.contact_name || detail.conversation.phone}</h1>
+            <p>{detail.conversation.phone}</p>
           </div>
           <StatusBadge status={detail.conversation.status} />
         </header>
@@ -86,7 +108,8 @@ export function ChatPage() {
             <article className={`message ${item.direction}`} key={item.id}>
               <p>{item.body}</p>
               <span>
-                {new Date(item.created_at).toLocaleString('pt-BR')} · {item.status}
+                {new Date(item.created_at).toLocaleString('pt-BR')} - {item.status}
+                {item.sent_by_user_name ? ` - ${item.sent_by_user_name}` : ''}
               </span>
             </article>
           ))}
@@ -109,24 +132,32 @@ export function ChatPage() {
         <section>
           <h2>Status</h2>
           <div className="segmented">
+            <button onClick={assignToMe}>
+              <UserCheck size={16} aria-hidden />
+              Assumir atendimento
+            </button>
             <button onClick={() => setStatus('new')}>Novo</button>
             <button onClick={() => setStatus('in_progress')}>Em atendimento</button>
-            <button onClick={() => setStatus('closed')}>Finalizado</button>
+            <button onClick={() => setStatus('closed')}>
+              <CheckCircle size={16} aria-hidden />
+              Marcar resolvido
+            </button>
           </div>
+          <p className="assigned">Atendente: {detail.conversation.assigned_user_name || 'sem responsavel'}</p>
         </section>
 
         <section>
-          <h2>Observações internas</h2>
+          <h2>Observacoes internas</h2>
           <form onSubmit={saveNote} className="note-form">
-            <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Adicionar observação" />
-            <button className="secondary-button">Salvar observação</button>
+            <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Adicionar observacao" />
+            <button className="secondary-button">Salvar observacao</button>
           </form>
           <div className="notes">
             {detail.notes.map((item) => (
               <article key={item.id}>
                 <p>{item.note}</p>
                 <span>
-                  {item.author_name || 'Sistema'} · {new Date(item.created_at).toLocaleString('pt-BR')}
+                  {item.author_name || 'Sistema'} - {new Date(item.created_at).toLocaleString('pt-BR')}
                 </span>
               </article>
             ))}
@@ -136,4 +167,3 @@ export function ChatPage() {
     </section>
   );
 }
-

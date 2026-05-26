@@ -1,87 +1,119 @@
-# Painel de atendimento WhatsApp oficial
+# Central interna WhatsApp Cloud API
 
-Sistema web em português do Brasil para atendimento via WhatsApp usando a WhatsApp Business Cloud API oficial da Meta. O projeto não usa automação do WhatsApp Web, QR Code, sessão de navegador ou acesso não oficial a mensagens criptografadas.
+Painel interno para atendimento via WhatsApp Business Cloud API oficial da Meta. O projeto nao usa WhatsApp Web, QR Code, automacao de navegador ou bibliotecas nao oficiais.
 
-## Estrutura
+## Stack
 
-```text
-/frontend   React + TypeScript + Vite
-/backend    Node.js + Express + TypeScript
-/database   Schema SQL PostgreSQL/Supabase
-/docs       Instruções de webhook e segurança
-```
+- Frontend: React + Vite
+- Backend: Node.js + Express
+- Banco: PostgreSQL ou Supabase
+- Tempo real: Socket.io
 
-## Requisitos
+## Variaveis de ambiente
 
-- Node.js 20+
-- PostgreSQL ou Supabase
-- Conta Meta Developer com WhatsApp Business Cloud API
-
-## Instalação
-
-1. Instale as dependências:
-
-```bash
-npm install
-```
-
-2. Crie o banco e execute:
-
-```bash
-psql "$DATABASE_URL" -f database/schema.sql
-```
-
-No Supabase, cole o conteúdo de `database/schema.sql` no SQL Editor.
-
-3. Copie o arquivo de ambiente:
-
-```bash
-cp .env.example .env
-```
-
-No Windows PowerShell:
+Copie `.env.example` para `.env` na raiz do projeto:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-4. Preencha `.env` com `DATABASE_URL`, `JWT_SECRET`, dados da Cloud API e `CORS_ORIGIN`.
+Preencha:
 
-5. Rode em desenvolvimento:
+```env
+NODE_ENV=development
+PORT=4000
+DATABASE_URL=
+JWT_SECRET=
+JWT_EXPIRES_IN=8h
+CORS_ORIGIN=http://localhost:5173
+WHATSAPP_API_VERSION=v25.0
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_VERIFY_TOKEN=
+WHATSAPP_APP_SECRET=
+VITE_API_URL=http://localhost:4000/api
+```
 
-```bash
+O `WHATSAPP_ACCESS_TOKEN` fica somente no backend. O frontend sempre chama o backend para enviar mensagens.
+
+## Banco de dados
+
+O login nao depende do banco. As credenciais ficam fixas em `backend/src/hardcoded-users.ts`.
+
+O banco ainda e usado para contatos, conversas, mensagens e observacoes. Execute o schema quando for receber/enviar atendimentos reais:
+
+```powershell
+psql $env:DATABASE_URL -f database/schema.sql
+```
+
+No Supabase, rode `database/schema.sql` no SQL Editor.
+
+O arquivo `database/seed.sql` e opcional; ele apenas espelha os mesmos usuarios fixos no banco para consultas futuras.
+
+## Usuarios fixos
+
+- `dhanrosa` / `dan!1311` - admin
+- `atendente1` / `123456`
+- `atendente2` / `123456`
+- `atendente3` / `123456`
+- `atendente4` / `123456`
+- `atendente5` / `123456`
+
+Para alterar usuarios ou senhas, edite `backend/src/hardcoded-users.ts` e reinicie o backend.
+
+## Rodar localmente
+
+Instale dependencias:
+
+```powershell
+npm install
+```
+
+Rode backend e frontend juntos:
+
+```powershell
 npm run dev
 ```
 
-Frontend: `http://localhost:5173`  
-Backend: `http://localhost:4000`
+URLs:
 
-## Acesso ao painel
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:4000`
+- Healthcheck: `http://localhost:4000/health`
 
-O painel abre direto em `/conversas`, sem tela de login.
+Tambem e possivel rodar separado:
 
-Para produção, recomenda-se recolocar autenticação ou proteger o acesso por VPN, proxy autenticado, firewall e HTTPS.
+```powershell
+npm run dev --workspace backend
+npm run dev --workspace frontend
+```
 
-## Rotas principais do backend
+## Webhook Meta
 
-- `GET /webhook`: validação do webhook da Meta.
-- `POST /webhook`: recebimento de mensagens e status.
-- `POST /messages/send`: envio oficial de texto pela Cloud API.
-- `GET /api/conversations`: lista de conversas.
-- `GET /api/conversations/:id`: histórico completo por conversa.
-- `POST /api/conversations/:id/notes`: observações internas.
-- `GET /api/users`: atendentes.
-- `POST /api/users`: cadastro de atendentes.
-- `GET /api/settings`: configurações visíveis.
+Configure no painel da Meta:
 
-## Configuração do webhook
+- Callback URL: `https://SEU_BACKEND/api/webhook`
+- Verify token: o mesmo valor de `WHATSAPP_VERIFY_TOKEN`
+- Evento: `messages`
 
-Veja [docs/meta-webhook.md](docs/meta-webhook.md).
+Tambem existe compatibilidade com `/webhook`, mas prefira `/api/webhook` para manter tudo sob `/api`.
 
-## Produção
+## Rotas principais
 
-- Publique backend e frontend em HTTPS.
-- Configure `CORS_ORIGIN` com o domínio real do frontend.
-- Use um token de longa duração ou integração segura da Meta.
-- Configure `WHATSAPP_APP_SECRET` para validar assinatura de webhook.
-- Nunca exponha `WHATSAPP_ACCESS_TOKEN` em código frontend, logs públicos ou repositório.
+- `POST /api/auth/login`
+- `GET /api/webhook`
+- `POST /api/webhook`
+- `GET /api/conversations`
+- `GET /api/conversations/:id/messages`
+- `POST /api/conversations/:id/assign`
+- `POST /api/conversations/:id/status`
+- `POST /api/conversations/:id/notes`
+- `POST /api/messages/send`
+
+## Deploy futuro
+
+- Frontend: Vercel com `VITE_API_URL=https://SEU_BACKEND/api`
+- Backend: Railway ou Render com PostgreSQL/Supabase
+- Configure `CORS_ORIGIN` com o dominio real do frontend
+- Use HTTPS e configure `WHATSAPP_APP_SECRET` para validar assinatura do webhook
+- Nunca coloque token da Meta no frontend, repositorio ou logs publicos

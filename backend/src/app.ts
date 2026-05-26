@@ -1,6 +1,7 @@
 import express from 'express';
 import { pinoHttp } from 'pino-http';
 import { ZodError } from 'zod';
+import { authRouter } from './routes/auth.js';
 import { conversationsRouter } from './routes/conversations.js';
 import { messagesRouter } from './routes/messages.js';
 import { settingsRouter } from './routes/settings.js';
@@ -12,6 +13,10 @@ import { logger } from './logger.js';
 export const app = express();
 
 app.use(pinoHttp({ logger }));
+app.use((req, _res, next) => {
+  console.log(`Request received: ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use(helmetMiddleware);
 app.use(corsMiddleware);
 app.use(apiLimiter);
@@ -25,14 +30,15 @@ app.use(
 );
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.use('/', webhookRouter);
 app.use('/webhook', webhookRouter);
 
+app.use('/api/auth', authRouter);
+app.use('/api/webhook', webhookRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/settings', settingsRouter);
-
-app.use('/messages', messagesRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) {

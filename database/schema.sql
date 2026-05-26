@@ -7,17 +7,17 @@ create type message_direction as enum ('inbound', 'outbound');
 create table users (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  email text not null unique,
+  username text not null unique,
   password_hash text not null,
   role user_role not null default 'agent',
   active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  created_at timestamptz not null default now()
 );
 
 create table contacts (
   id uuid primary key default gen_random_uuid(),
-  phone_number text not null unique,
+  wa_id text not null unique,
+  phone text not null,
   name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -26,7 +26,7 @@ create table contacts (
 create table conversations (
   id uuid primary key default gen_random_uuid(),
   contact_id uuid not null references contacts(id) on delete cascade,
-  assigned_user_id uuid references users(id) on delete set null,
+  assigned_user_id uuid,
   status conversation_status not null default 'new',
   last_message_at timestamptz,
   created_at timestamptz not null default now(),
@@ -40,21 +40,22 @@ create unique index conversations_one_open_per_contact
 create table messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references conversations(id) on delete cascade,
+  wa_message_id text unique,
   direction message_direction not null,
-  provider_message_id text unique,
+  type text not null default 'text',
   body text not null,
-  message_type text not null default 'text',
+  from_wa_id text,
+  to_wa_id text,
+  sent_by_user_id uuid,
   status text not null default 'received',
-  provider_payload jsonb,
-  created_by uuid references users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  raw_payload jsonb,
+  created_at timestamptz not null default now()
 );
 
-create table conversation_notes (
+create table internal_notes (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references conversations(id) on delete cascade,
-  user_id uuid references users(id) on delete set null,
+  user_id uuid,
   note text not null,
   created_at timestamptz not null default now()
 );
@@ -66,15 +67,7 @@ create table settings (
 );
 
 create index conversations_status_idx on conversations(status);
+create index conversations_assigned_user_idx on conversations(assigned_user_id);
+create index contacts_wa_id_idx on contacts(wa_id);
 create index messages_conversation_created_idx on messages(conversation_id, created_at);
-create index contacts_phone_number_idx on contacts(phone_number);
-
--- Usuário inicial. Troque a senha depois do primeiro acesso.
-insert into users (name, email, password_hash, role)
-values (
-  'Administrador',
-  'pamdacases@gmail.com',
-  '$2a$12$F4WLwZyJI6AQI3r7OsgVVOmyHislYVfzpX8FEmPQWM7lPYqWxbfxO',
-  'admin'
-)
-on conflict (email) do nothing;
+create index messages_wa_message_id_idx on messages(wa_message_id);
