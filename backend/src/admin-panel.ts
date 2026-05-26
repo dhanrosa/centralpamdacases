@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { sendWhatsAppTextMessage } from './services/whatsapp.js';
+import { sendWhatsAppTextMessage, WhatsAppCloudApiError } from './services/whatsapp.js';
 import { addOutboundMessage, createConversation, getConversation, listConversations, storeStats } from './whatsapp-store.js';
 
 const sessionCookie = 'central_pamda_session';
@@ -526,7 +526,13 @@ adminRouter.post('/conversas/:id/send', requireSession, async (req, res) => {
     addOutboundMessage(conversation.waId, body, result.messages?.[0]?.id);
   } catch (error) {
     console.error('Falha ao enviar mensagem real pelo WhatsApp Cloud API', error);
-    addOutboundMessage(conversation.waId, `${body} (falha no envio pela Cloud API)`);
+    const errorMessage =
+      error instanceof WhatsAppCloudApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'Erro desconhecido ao enviar pela Cloud API.';
+    addOutboundMessage(conversation.waId, `${body}\n\nErro Meta: ${errorMessage}`, undefined, 'failed');
   }
 
   return res.redirect(`/conversas/${encodeURIComponent(conversation.id)}`);

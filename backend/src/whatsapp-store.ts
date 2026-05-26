@@ -159,7 +159,7 @@ export function getConversation(id: string) {
   return store.conversations.find((item) => item.id === id);
 }
 
-export function addOutboundMessage(waId: string, text: string, providerId?: string) {
+export function addOutboundMessage(waId: string, text: string, providerId?: string, status = 'sent') {
   const conversation = upsertConversation(waId, undefined);
   conversation.messages.push({
     id: providerId || `${waId}-out-${Date.now()}`,
@@ -168,7 +168,7 @@ export function addOutboundMessage(waId: string, text: string, providerId?: stri
     text,
     time: nowLabel(),
     timestamp: new Date().toISOString(),
-    status: 'sent'
+    status
   });
   conversation.lastMessage = text;
   conversation.time = nowLabel();
