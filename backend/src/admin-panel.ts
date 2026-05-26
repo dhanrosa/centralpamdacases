@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { sendWhatsAppTextMessage } from './services/whatsapp.js';
-import { addOutboundMessage, getConversation, listConversations, storeStats } from './whatsapp-store.js';
+import { addOutboundMessage, createConversation, getConversation, listConversations, storeStats } from './whatsapp-store.js';
 
 const sessionCookie = 'central_pamda_session';
 const sessionValue = 'central-pamda-admin-session';
@@ -150,7 +150,7 @@ function initials(name: string) {
   return escapeHtml(name.trim().slice(0, 1).toUpperCase() || 'P');
 }
 
-function whatsappShell(title: string, listHtml: string, chatHtml: string) {
+function whatsappShell(title: string, listHtml: string, chatHtml: string, activeConversationId = '') {
   return `<!doctype html>
 <html lang="pt-BR">
   <head>
@@ -178,6 +178,9 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string) {
       .wa-list-header h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
       .wa-search { margin: 0 16px 10px; background: #202c26; border-radius: 999px; padding: 10px 14px; color: #aebac1; }
       .wa-search input { width: 100%; border: 0; outline: 0; background: transparent; color: #e9edef; }
+      .start-form { margin: 0 16px 12px; display: grid; grid-template-columns: 1fr; gap: 8px; }
+      .start-form input { border: 0; outline: 0; border-radius: 8px; background: #202c26; color: #e9edef; padding: 10px 12px; }
+      .start-form button { border: 0; border-radius: 8px; background: #00a884; color: #06241d; font-weight: 800; padding: 10px 12px; cursor: pointer; }
       .wa-items { overflow: auto; padding: 4px 8px 12px; }
       .wa-item { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; }
       .wa-item:hover, .wa-item.active { background: #2a2f2d; }
@@ -233,10 +236,93 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string) {
       <section class="wa-list">
         <header class="wa-list-header"><h1>Conversas</h1><span>⋮</span></header>
         <label class="wa-search"><input placeholder="Pesquisar ou começar uma nova conversa" /></label>
+        <form class="start-form" id="start-conversation">
+          <input name="name" placeholder="Nome opcional" />
+          <input name="phone" placeholder="Telefone com DDI e DDD. Ex: 5511999999999" required />
+          <button type="submit">Iniciar conversa</button>
+        </form>
         <div class="wa-items">${listHtml}</div>
       </section>
       <section class="wa-chat">${chatHtml}</section>
     </div>
+    <script>
+      var activeConversationId = ${JSON.stringify(activeConversationId)};
+      function escapeText(value) {
+        return String(value || '').replace(/[&<>"']/g, function (char) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+        });
+      }
+      function renderConversationList(items) {
+        var container = document.querySelector('.wa-items');
+        if (!container) return;
+        if (!items.length) {
+          container.innerHTML = '<div class="preview" style="padding:18px">Nenhuma conversa recebida ainda.</div>';
+          return;
+        }
+        container.innerHTML = items.map(function (item) {
+          var active = item.id === activeConversationId ? ' active' : '';
+          var initial = escapeText((item.name || item.phone || 'P').trim().slice(0, 1).toUpperCase());
+          return '<a class="wa-item' + active + '" href="/conversas/' + encodeURIComponent(item.id) + '">' +
+            '<div class="avatar">' + initial + '</div>' +
+            '<div><strong>' + escapeText(item.name) + '</strong><div class="preview">' + escapeText(item.last_message || item.phone) + '</div></div>' +
+            '<div><div class="time">' + escapeText(item.time) + '</div><span class="status-pill ' + escapeText(item.status) + '">' + escapeText(item.status) + '</span></div>' +
+          '</a>';
+        }).join('');
+      }
+      function loadConversations() {
+        fetch('/api/conversations').then(function (response) {
+          if (!response.ok) throw new Error('Falha ao carregar conversas');
+          return response.json();
+        }).then(renderConversationList).catch(function (error) {
+          console.error(error);
+        });
+      }
+      function renderMessages(data) {
+        var container = document.getElementById('chat-messages');
+        if (!container) return;
+        container.innerHTML = '<div class="day">Hoje</div><div class="secure">Esta empresa usa a WhatsApp Cloud API oficial da Meta para gerenciar esta conversa.</div>' +
+          data.messages.map(function (item) {
+            var type = item.direction === 'sent' ? 'sent' : 'received';
+            return '<article class="bubble ' + type + '"><p>' + escapeText(item.text) + '</p><span>' + escapeText(item.time) + (item.status ? ' ✓ ' + escapeText(item.status) : '') + '</span></article>';
+          }).join('');
+        container.scrollTop = container.scrollHeight;
+      }
+      function loadMessages() {
+        if (!activeConversationId) return;
+        fetch('/api/conversations/' + encodeURIComponent(activeConversationId) + '/messages').then(function (response) {
+          if (!response.ok) throw new Error('Falha ao carregar mensagens');
+          return response.json();
+        }).then(renderMessages).catch(function (error) {
+          console.error(error);
+        });
+      }
+      var startForm = document.getElementById('start-conversation');
+      if (startForm) {
+        startForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var formData = new FormData(startForm);
+          fetch('/api/conversations/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: formData.get('name'),
+              phone: formData.get('phone')
+            })
+          }).then(function (response) {
+            if (!response.ok) throw new Error('Falha ao iniciar conversa');
+            return response.json();
+          }).then(function (conversation) {
+            window.location.href = '/conversas/' + encodeURIComponent(conversation.id);
+          }).catch(function (error) {
+            alert(error.message);
+          });
+        });
+      }
+      loadConversations();
+      loadMessages();
+      setInterval(loadConversations, 8000);
+      setInterval(loadMessages, 5000);
+    </script>
   </body>
 </html>`;
 }
@@ -303,6 +389,65 @@ adminRouter.post('/api/logout', (req, res) => {
   return res.redirect('/login');
 });
 
+adminRouter.get('/api/conversations', requireSession, (_req, res) => {
+  return res.json(
+    listConversations().map((item) => ({
+      id: item.id,
+      wa_id: item.waId,
+      name: item.name,
+      phone: item.phone,
+      last_message: item.lastMessage,
+      time: item.time,
+      status: item.status
+    }))
+  );
+});
+
+adminRouter.get('/api/conversations/:id/messages', requireSession, (req, res) => {
+  const conversation = getConversation(req.params.id);
+
+  if (!conversation) {
+    return res.status(404).json({ message: 'Conversa nao encontrada.' });
+  }
+
+  return res.json({
+    conversation: {
+      id: conversation.id,
+      wa_id: conversation.waId,
+      name: conversation.name,
+      phone: conversation.phone,
+      status: conversation.status
+    },
+    messages: conversation.messages.map((item) => ({
+      id: item.id,
+      wa_message_id: item.waMessageId,
+      direction: item.direction,
+      text: item.text,
+      time: item.time,
+      timestamp: item.timestamp,
+      status: item.status
+    }))
+  });
+});
+
+adminRouter.post('/api/conversations/start', requireSession, (req, res) => {
+  const phone = String(req.body?.phone ?? '').trim();
+  const name = String(req.body?.name ?? '').trim();
+
+  if (!phone) {
+    return res.status(400).json({ message: 'Informe o telefone com DDI e DDD.' });
+  }
+
+  const conversation = createConversation(phone, name);
+  return res.status(201).json({
+    id: conversation.id,
+    wa_id: conversation.waId,
+    name: conversation.name,
+    phone: conversation.phone,
+    status: conversation.status
+  });
+});
+
 adminRouter.get('/dashboard', requireSession, (_req, res) => {
   const stats = storeStats();
   return res.type('html').send(page('Dashboard', `<section class="page">
@@ -353,7 +498,7 @@ adminRouter.get('/conversas/:id', requireSession, (req, res) => {
       <div class="chat-person"><div class="avatar">${initials(conversation.name)}</div><div><strong>${escapeHtml(conversation.name)}</strong><span>${escapeHtml(conversation.phone)}</span></div></div>
       <div class="chat-actions"><span>⌕</span><span>⋮</span></div>
     </header>
-    <div class="chat-bg">
+    <div class="chat-bg" id="chat-messages">
       <div class="day">Hoje</div>
       <div class="secure">Esta empresa usa a WhatsApp Cloud API oficial da Meta para gerenciar esta conversa.</div>
       ${conversation.messages
@@ -365,7 +510,7 @@ adminRouter.get('/conversas/:id', requireSession, (req, res) => {
       <textarea name="body" placeholder="Digite uma mensagem"></textarea>
       <button type="submit">➤</button>
     </form>`;
-  return res.type('html').send(whatsappShell(conversation.name, listHtml, chatHtml));
+  return res.type('html').send(whatsappShell(conversation.name, listHtml, chatHtml, conversation.id));
 });
 
 adminRouter.post('/conversas/:id/send', requireSession, async (req, res) => {

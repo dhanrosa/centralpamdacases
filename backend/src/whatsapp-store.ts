@@ -3,9 +3,11 @@ export type MessageDirection = 'received' | 'sent';
 
 export interface StoredMessage {
   id: string;
+  waMessageId: string;
   direction: MessageDirection;
   text: string;
   time: string;
+  timestamp: string;
   status?: string;
 }
 
@@ -43,6 +45,21 @@ function nowLabel() {
   }).format(new Date());
 }
 
+function labelFromTimestamp(timestamp: string | number | undefined) {
+  const date = timestamp ? new Date(Number(timestamp) * 1000) : new Date();
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(Number.isNaN(date.getTime()) ? new Date() : date);
+}
+
+function isoFromTimestamp(timestamp: string | number | undefined) {
+  const date = timestamp ? new Date(Number(timestamp) * 1000) : new Date();
+  return (Number.isNaN(date.getTime()) ? new Date() : date).toISOString();
+}
+
 function messageText(message: any) {
   if (message?.text?.body) return String(message.text.body);
   if (message?.button?.text) return String(message.button.text);
@@ -75,6 +92,16 @@ function upsertConversation(waId: string, name: string | null | undefined) {
   return conversation;
 }
 
+export function createConversation(phone: string, name?: string) {
+  const normalizedPhone = phone.replace(/\D/g, '');
+  const conversation = upsertConversation(normalizedPhone, name || normalizedPhone);
+  conversation.lastMessage ||= 'Conversa iniciada no painel';
+  conversation.time = nowLabel();
+  conversation.status = 'pendente';
+  store.conversations = [conversation, ...store.conversations.filter((item) => item.id !== conversation.id)];
+  return conversation;
+}
+
 export function ingestWhatsAppWebhook(payload: any) {
   const changes = payload?.entry?.flatMap((entry: any) => entry.changes ?? []) ?? [];
 
@@ -100,20 +127,24 @@ export function ingestWhatsAppWebhook(payload: any) {
       const contact = contacts.find((item: any) => item.wa_id === waId);
       const conversation = upsertConversation(waId, contact?.profile?.name);
       const text = messageText(message);
+      const messageId = message.id ?? `${waId}-${Date.now()}`;
+      const time = labelFromTimestamp(message.timestamp);
 
-      if (!conversation.messages.some((item) => item.id === message.id)) {
+      if (!conversation.messages.some((item) => item.waMessageId === messageId)) {
         conversation.messages.push({
-          id: message.id ?? `${waId}-${Date.now()}`,
+          id: messageId,
+          waMessageId: messageId,
           direction: 'received',
           text,
-          time: nowLabel(),
+          time,
+          timestamp: isoFromTimestamp(message.timestamp),
           status: 'received'
         });
         store.receivedCount += 1;
       }
 
       conversation.lastMessage = text;
-      conversation.time = nowLabel();
+      conversation.time = time;
       conversation.status = 'aberto';
       store.conversations = [conversation, ...store.conversations.filter((item) => item.id !== conversation.id)];
     }
@@ -132,9 +163,11 @@ export function addOutboundMessage(waId: string, text: string, providerId?: stri
   const conversation = upsertConversation(waId, undefined);
   conversation.messages.push({
     id: providerId || `${waId}-out-${Date.now()}`,
+    waMessageId: providerId || `${waId}-out-${Date.now()}`,
     direction: 'sent',
     text,
     time: nowLabel(),
+    timestamp: new Date().toISOString(),
     status: 'sent'
   });
   conversation.lastMessage = text;
