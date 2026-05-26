@@ -28,7 +28,11 @@ export function handleWebhookVerification(req: Request, res: Response) {
 webhookRouter.get('/', handleWebhookVerification);
 
 webhookRouter.post('/', (req, res) => {
-  console.log('WhatsApp webhook POST received', JSON.stringify(req.body, null, 2));
-  ingestWhatsAppWebhook(req.body);
+  console.log('WEBHOOK RECEBIDO');
+  console.log(JSON.stringify(req.body, null, 2));
+  const result = ingestWhatsAppWebhook(req.body);
+  if (result.foundMessages === 0) {
+    console.log('Nenhuma mensagem encontrada no payload');
+  }
   return res.status(200).json({ received: true });
 });

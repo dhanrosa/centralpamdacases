@@ -27,7 +27,7 @@ export const corsMiddleware = cors({
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  limit: 2000,
   standardHeaders: true,
   legacyHeaders: false
 });

@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { sendWhatsAppTextMessage, WhatsAppCloudApiError } from './services/whatsapp.js';
-import { addOutboundMessage, createConversation, getConversation, listConversations, storeStats } from './whatsapp-store.js';
+import {
+  addOutboundMessage,
+  createConversation,
+  getConversation,
+  listConversations,
+  listMessages,
+  storeStats,
+  updateOutboundMessage
+} from './whatsapp-store.js';
 
 const sessionCookie = 'central_pamda_session';
 const sessionValue = 'central-pamda-admin-session';
@@ -150,6 +158,88 @@ function initials(name: string) {
   return escapeHtml(name.trim().slice(0, 1).toUpperCase() || 'P');
 }
 
+function publicConversation(item: ReturnType<typeof listConversations>[number]) {
+  return {
+    id: item.id,
+    contactName: item.contactName,
+    phone: item.phone,
+    wa_id: item.wa_id,
+    status: item.status,
+    lastMessage: item.lastMessage,
+    lastMessageAt: item.lastMessageAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    time: item.time
+  };
+}
+
+function publicMessage(item: ReturnType<typeof listMessages>[number]) {
+  return {
+    id: item.id,
+    waMessageId: item.waMessageId,
+    conversationId: item.conversationId,
+    direction: item.direction,
+    type: item.type,
+    body: item.body,
+    status: item.status,
+    timestamp: item.timestamp,
+    time: item.time,
+    error: item.error
+  };
+}
+
+function whatsappErrorMessage(error: unknown) {
+  if (error instanceof WhatsAppCloudApiError) {
+    return String(error.details?.responseBody ?? error.message);
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Erro desconhecido ao enviar pela Cloud API.';
+}
+
+async function sendConversationMessage(conversationId: string, body: string) {
+  const conversation = getConversation(conversationId);
+  const text = body.trim();
+
+  if (!conversation) {
+    throw new Error('Conversa nao encontrada.');
+  }
+
+  if (!text) {
+    throw new Error('Mensagem vazia.');
+  }
+
+  const message = addOutboundMessage(conversation.wa_id || conversation.phone, text, 'sending');
+
+  try {
+    const result = await sendWhatsAppTextMessage({ to: conversation.wa_id || conversation.phone, text });
+    const providerId = result.messages?.[0]?.id;
+    return {
+      ok: true,
+      conversation,
+      message: updateOutboundMessage(message.id, {
+        providerId,
+        status: 'sent',
+        rawPayload: result
+      })
+    };
+  } catch (error) {
+    console.error('Falha ao enviar mensagem real pelo WhatsApp Cloud API', error);
+    return {
+      ok: false,
+      conversation,
+      message: updateOutboundMessage(message.id, {
+        status: 'failed',
+        error: whatsappErrorMessage(error),
+        rawPayload: error instanceof WhatsAppCloudApiError ? error.details : undefined
+      })
+    };
+  }
+}
+
 function whatsappShell(title: string, listHtml: string, chatHtml: string, activeConversationId = '') {
   return `<!doctype html>
 <html lang="pt-BR">
@@ -176,11 +266,15 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
       .wa-list { background: #111b16; border-right: 1px solid #263832; min-width: 0; display: grid; grid-template-rows: auto auto 1fr; }
       .wa-list-header { padding: 20px 20px 12px; display: flex; align-items: center; justify-content: space-between; }
       .wa-list-header h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
+      .list-actions { display: flex; align-items: center; gap: 8px; position: relative; }
+      .small-action { width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: #e9edef; font-size: 22px; cursor: pointer; }
+      .small-action:hover { background: #202c26; }
+      .menu { display: none; position: absolute; right: 0; top: 38px; min-width: 190px; background: #23332c; border: 1px solid #31473e; border-radius: 8px; padding: 6px; z-index: 10; box-shadow: 0 14px 30px rgba(0,0,0,.32); }
+      .menu.open { display: grid; }
+      .menu button, .menu a { border: 0; border-radius: 6px; background: transparent; color: #e9edef; text-align: left; padding: 10px; cursor: pointer; }
+      .menu button:hover, .menu a:hover { background: #31473e; }
       .wa-search { margin: 0 16px 10px; background: #202c26; border-radius: 999px; padding: 10px 14px; color: #aebac1; }
       .wa-search input { width: 100%; border: 0; outline: 0; background: transparent; color: #e9edef; }
-      .start-form { margin: 0 16px 12px; display: grid; grid-template-columns: 1fr; gap: 8px; }
-      .start-form input { border: 0; outline: 0; border-radius: 8px; background: #202c26; color: #e9edef; padding: 10px 12px; }
-      .start-form button { border: 0; border-radius: 8px; background: #00a884; color: #06241d; font-weight: 800; padding: 10px 12px; cursor: pointer; }
       .wa-items { overflow: auto; padding: 4px 8px 12px; }
       .wa-item { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; }
       .wa-item:hover, .wa-item.active { background: #2a2f2d; }
@@ -212,6 +306,16 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
       .composer .plus, .composer button { border: 0; background: transparent; color: #aebac1; font-size: 28px; cursor: pointer; }
       textarea { width: 100%; min-height: 42px; max-height: 120px; resize: vertical; border: 0; outline: 0; border-radius: 8px; padding: 12px 14px; background: #2a3942; color: #e9edef; }
       .empty-chat { height: 100%; display: grid; place-items: center; text-align: center; color: #aebac1; padding: 24px; }
+      .modal-backdrop { display: none; position: fixed; inset: 0; place-items: center; background: rgba(0,0,0,.55); z-index: 50; padding: 20px; }
+      .modal-backdrop.open { display: grid; }
+      .modal { width: min(100%, 420px); background: #202c26; border: 1px solid #31473e; border-radius: 8px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+      .modal h2 { margin: 0 0 14px; }
+      .modal label { display: grid; gap: 6px; margin-bottom: 12px; color: #aebac1; }
+      .modal input { border: 0; outline: 0; border-radius: 8px; background: #111b16; color: #e9edef; padding: 12px; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+      .modal-actions button { border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+      .modal-actions .confirm { background: #00a884; color: #06241d; font-weight: 800; }
+      .modal-actions .cancel { background: #31473e; color: #e9edef; }
       @media (max-width: 900px) {
         body { overflow: auto; }
         .wa-app { min-height: 100vh; height: auto; grid-template-columns: 1fr; }
@@ -234,16 +338,33 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
         <form class="bottom" method="post" action="/api/logout"><button title="Sair">↩</button></form>
       </aside>
       <section class="wa-list">
-        <header class="wa-list-header"><h1>Conversas</h1><span>⋮</span></header>
-        <label class="wa-search"><input placeholder="Pesquisar ou começar uma nova conversa" /></label>
-        <form class="start-form" id="start-conversation">
-          <input name="name" placeholder="Nome opcional" />
-          <input name="phone" placeholder="Telefone com DDI e DDD. Ex: 5511999999999" required />
-          <button type="submit">Iniciar conversa</button>
-        </form>
+        <header class="wa-list-header">
+          <h1>Conversas</h1>
+          <div class="list-actions">
+            <button class="small-action" id="open-start" title="Iniciar nova conversa">+</button>
+            <button class="small-action" id="toggle-menu" title="Opcoes">⋮</button>
+            <div class="menu" id="conversation-menu">
+              <button id="menu-start" type="button">Iniciar nova conversa</button>
+              <button id="menu-refresh" type="button">Atualizar conversas</button>
+              <form method="post" action="/api/logout"><button type="submit">Sair</button></form>
+            </div>
+          </div>
+        </header>
+        <label class="wa-search"><input id="conversation-search" placeholder="Pesquisar" /></label>
         <div class="wa-items">${listHtml}</div>
       </section>
       <section class="wa-chat">${chatHtml}</section>
+    </div>
+    <div class="modal-backdrop" id="start-modal">
+      <form class="modal" id="start-conversation">
+        <h2>Nova conversa</h2>
+        <label>Telefone<input name="phone" placeholder="5541999999999" required /></label>
+        <label>Nome opcional<input name="name" placeholder="Nome do contato" /></label>
+        <div class="modal-actions">
+          <button class="cancel" id="close-start" type="button">Cancelar</button>
+          <button class="confirm" type="submit">Iniciar</button>
+        </div>
+      </form>
     </div>
     <script>
       var activeConversationId = ${JSON.stringify(activeConversationId)};
@@ -261,16 +382,16 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
         }
         container.innerHTML = items.map(function (item) {
           var active = item.id === activeConversationId ? ' active' : '';
-          var initial = escapeText((item.name || item.phone || 'P').trim().slice(0, 1).toUpperCase());
+          var initial = escapeText((item.contactName || item.phone || 'P').trim().slice(0, 1).toUpperCase());
           return '<a class="wa-item' + active + '" href="/conversas/' + encodeURIComponent(item.id) + '">' +
             '<div class="avatar">' + initial + '</div>' +
-            '<div><strong>' + escapeText(item.name) + '</strong><div class="preview">' + escapeText(item.last_message || item.phone) + '</div></div>' +
+            '<div><strong>' + escapeText(item.contactName || item.phone) + '</strong><div class="preview">' + escapeText(item.lastMessage || item.phone) + '</div></div>' +
             '<div><div class="time">' + escapeText(item.time) + '</div><span class="status-pill ' + escapeText(item.status) + '">' + escapeText(item.status) + '</span></div>' +
           '</a>';
         }).join('');
       }
       function loadConversations() {
-        fetch('/api/conversations').then(function (response) {
+        fetch('/api/conversations', { cache: 'no-store' }).then(function (response) {
           if (!response.ok) throw new Error('Falha ao carregar conversas');
           return response.json();
         }).then(renderConversationList).catch(function (error) {
@@ -287,6 +408,18 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
           }).join('');
         container.scrollTop = container.scrollHeight;
       }
+      renderMessages = function (data) {
+        var container = document.getElementById('chat-messages');
+        if (!container) return;
+        var notice = '<div class="day">Hoje</div><div class="secure">Esta empresa usa a WhatsApp Cloud API oficial da Meta para gerenciar esta conversa.</div>';
+        var rows = data.messages.map(function (item) {
+          var type = item.direction === 'outbound' ? 'sent' : 'received';
+          var detail = item.error ? ' - ' + escapeText(item.error) : '';
+          return '<article class="bubble ' + type + '"><p>' + escapeText(item.body) + '</p><span>' + escapeText(item.time) + (item.status ? ' ✓ ' + escapeText(item.status) : '') + detail + '</span></article>';
+        }).join('');
+        container.innerHTML = notice + rows;
+        container.scrollTop = container.scrollHeight;
+      };
       function loadMessages() {
         if (!activeConversationId) return;
         fetch('/api/conversations/' + encodeURIComponent(activeConversationId) + '/messages').then(function (response) {
@@ -318,10 +451,77 @@ function whatsappShell(title: string, listHtml: string, chatHtml: string, active
           });
         });
       }
+      var modal = document.getElementById('start-modal');
+      var menu = document.getElementById('conversation-menu');
+      function openStartModal() {
+        if (menu) menu.classList.remove('open');
+        if (modal) modal.classList.add('open');
+      }
+      function closeStartModal() {
+        if (modal) modal.classList.remove('open');
+      }
+      var openStart = document.getElementById('open-start');
+      var menuStart = document.getElementById('menu-start');
+      var closeStart = document.getElementById('close-start');
+      var toggleMenu = document.getElementById('toggle-menu');
+      var menuRefresh = document.getElementById('menu-refresh');
+      var searchInput = document.getElementById('conversation-search');
+      if (openStart) openStart.addEventListener('click', openStartModal);
+      if (menuStart) menuStart.addEventListener('click', openStartModal);
+      if (closeStart) closeStart.addEventListener('click', closeStartModal);
+      if (modal) modal.addEventListener('click', function (event) {
+        if (event.target === modal) closeStartModal();
+      });
+      if (toggleMenu) toggleMenu.addEventListener('click', function () {
+        if (menu) menu.classList.toggle('open');
+      });
+      if (menuRefresh) menuRefresh.addEventListener('click', function () {
+        if (menu) menu.classList.remove('open');
+        loadConversations();
+        loadMessages();
+      });
+      if (searchInput) searchInput.addEventListener('input', function () {
+        var term = String(searchInput.value || '').toLowerCase();
+        document.querySelectorAll('.wa-item').forEach(function (item) {
+          item.style.display = item.textContent.toLowerCase().indexOf(term) >= 0 ? '' : 'none';
+        });
+      });
+      var composer = document.querySelector('.composer');
+      if (composer) {
+        composer.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var textarea = composer.querySelector('textarea[name="body"]');
+          var text = textarea ? String(textarea.value || '').trim() : '';
+          if (!text || !activeConversationId) return;
+          if (textarea) textarea.value = '';
+          var container = document.getElementById('chat-messages');
+          if (container) {
+            container.insertAdjacentHTML('beforeend', '<article class="bubble sent"><p>' + escapeText(text) + '</p><span>enviando</span></article>');
+            container.scrollTop = container.scrollHeight;
+          }
+          fetch('/api/messages/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversationId: activeConversationId, body: text })
+          }).then(function (response) {
+            return response.json().then(function (data) {
+              if (!response.ok) throw new Error(data.error || data.message || 'Falha ao enviar mensagem');
+              return data;
+            });
+          }).then(function () {
+            loadConversations();
+            loadMessages();
+          }).catch(function (error) {
+            console.error(error);
+            alert(error.message);
+            loadMessages();
+          });
+        });
+      }
       loadConversations();
       loadMessages();
-      setInterval(loadConversations, 8000);
-      setInterval(loadMessages, 5000);
+      setInterval(loadConversations, 3000);
+      setInterval(loadMessages, 2500);
     </script>
   </body>
 </html>`;
@@ -389,22 +589,14 @@ adminRouter.post('/api/logout', (req, res) => {
   return res.redirect('/login');
 });
 
-adminRouter.get('/api/conversations', requireSession, (_req, res) => {
-  return res.json(
-    listConversations().map((item) => ({
-      id: item.id,
-      wa_id: item.waId,
-      name: item.name,
-      phone: item.phone,
-      last_message: item.lastMessage,
-      time: item.time,
-      status: item.status
-    }))
-  );
+adminRouter.get('/api/conversations', requireSession, (req, res) => {
+  const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+  return res.json(listConversations(since).map(publicConversation));
 });
 
 adminRouter.get('/api/conversations/:id/messages', requireSession, (req, res) => {
   const conversation = getConversation(req.params.id);
+  const since = typeof req.query.since === 'string' ? req.query.since : undefined;
 
   if (!conversation) {
     return res.status(404).json({ message: 'Conversa nao encontrada.' });
@@ -413,24 +605,16 @@ adminRouter.get('/api/conversations/:id/messages', requireSession, (req, res) =>
   return res.json({
     conversation: {
       id: conversation.id,
-      wa_id: conversation.waId,
-      name: conversation.name,
+      wa_id: conversation.wa_id,
+      contactName: conversation.contactName,
       phone: conversation.phone,
       status: conversation.status
     },
-    messages: conversation.messages.map((item) => ({
-      id: item.id,
-      wa_message_id: item.waMessageId,
-      direction: item.direction,
-      text: item.text,
-      time: item.time,
-      timestamp: item.timestamp,
-      status: item.status
-    }))
+    messages: listMessages(conversation.id, since).map(publicMessage)
   });
 });
 
-adminRouter.post('/api/conversations/start', requireSession, (req, res) => {
+function startConversation(req: Request, res: Response) {
   const phone = String(req.body?.phone ?? '').trim();
   const name = String(req.body?.name ?? '').trim();
 
@@ -438,14 +622,31 @@ adminRouter.post('/api/conversations/start', requireSession, (req, res) => {
     return res.status(400).json({ message: 'Informe o telefone com DDI e DDD.' });
   }
 
-  const conversation = createConversation(phone, name);
-  return res.status(201).json({
-    id: conversation.id,
-    wa_id: conversation.waId,
-    name: conversation.name,
-    phone: conversation.phone,
-    status: conversation.status
-  });
+  try {
+    const conversation = createConversation(phone, name);
+    return res.status(201).json(publicConversation({ ...conversation, time: '' }));
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Telefone invalido.' });
+  }
+}
+
+adminRouter.post('/api/conversations', requireSession, startConversation);
+adminRouter.post('/api/conversations/start', requireSession, startConversation);
+
+adminRouter.post('/api/messages/send', requireSession, async (req, res) => {
+  const conversationId = String(req.body?.conversation_id ?? req.body?.conversationId ?? '').trim();
+  const body = String(req.body?.body ?? '').trim();
+
+  try {
+    const result = await sendConversationMessage(conversationId, body);
+    return res.status(result.ok ? 200 : 502).json({
+      ok: result.ok,
+      message: result.message ? publicMessage({ ...result.message, time: '' }) : undefined,
+      error: result.ok ? undefined : result.message?.error
+    });
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: error instanceof Error ? error.message : 'Falha ao enviar mensagem.' });
+  }
 });
 
 adminRouter.get('/dashboard', requireSession, (_req, res) => {
@@ -467,8 +668,8 @@ adminRouter.get('/conversas', requireSession, (_req, res) => {
     ? conversations
         .map(
           (item) => `<a class="wa-item" href="/conversas/${encodeURIComponent(item.id)}">
-            <div class="avatar">${initials(item.name)}</div>
-            <div><strong>${escapeHtml(item.name)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
+            <div class="avatar">${initials(item.contactName)}</div>
+            <div><strong>${escapeHtml(item.contactName || item.phone)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
             <div><div class="time">${escapeHtml(item.time)}</div><span class="status-pill ${item.status}">${item.status}</span></div>
           </a>`
         )
@@ -488,21 +689,22 @@ adminRouter.get('/conversas/:id', requireSession, (req, res) => {
   const listHtml = conversations
     .map(
       (item) => `<a class="wa-item ${item.id === conversation.id ? 'active' : ''}" href="/conversas/${encodeURIComponent(item.id)}">
-        <div class="avatar">${initials(item.name)}</div>
-        <div><strong>${escapeHtml(item.name)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
+        <div class="avatar">${initials(item.contactName)}</div>
+        <div><strong>${escapeHtml(item.contactName || item.phone)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
         <div><div class="time">${escapeHtml(item.time)}</div><span class="status-pill ${item.status}">${item.status}</span></div>
       </a>`
     )
     .join('');
+  const messages = listMessages(conversation.id);
   const chatHtml = `<header class="chat-header">
-      <div class="chat-person"><div class="avatar">${initials(conversation.name)}</div><div><strong>${escapeHtml(conversation.name)}</strong><span>${escapeHtml(conversation.phone)}</span></div></div>
+      <div class="chat-person"><div class="avatar">${initials(conversation.contactName)}</div><div><strong>${escapeHtml(conversation.contactName || conversation.phone)}</strong><span>${escapeHtml(conversation.phone)}</span></div></div>
       <div class="chat-actions"><span>⌕</span><span>⋮</span></div>
     </header>
     <div class="chat-bg" id="chat-messages">
       <div class="day">Hoje</div>
       <div class="secure">Esta empresa usa a WhatsApp Cloud API oficial da Meta para gerenciar esta conversa.</div>
-      ${conversation.messages
-        .map((item) => `<article class="bubble ${item.direction === 'sent' ? 'sent' : 'received'}"><p>${escapeHtml(item.text)}</p><span>${escapeHtml(item.time)}${item.status ? ` ✓ ${escapeHtml(item.status)}` : ''}</span></article>`)
+      ${messages
+        .map((item) => `<article class="bubble ${item.direction === 'outbound' ? 'sent' : 'received'}"><p>${escapeHtml(item.body)}</p><span>${escapeHtml(item.time)}${item.status ? ` - ${escapeHtml(item.status)}` : ''}${item.error ? ` - ${escapeHtml(item.error)}` : ''}</span></article>`)
         .join('')}
     </div>
     <form class="composer" method="post" action="/conversas/${encodeURIComponent(conversation.id)}/send">
@@ -510,32 +712,21 @@ adminRouter.get('/conversas/:id', requireSession, (req, res) => {
       <textarea name="body" placeholder="Digite uma mensagem"></textarea>
       <button type="submit">➤</button>
     </form>`;
-  return res.type('html').send(whatsappShell(conversation.name, listHtml, chatHtml, conversation.id));
+  return res.type('html').send(whatsappShell(conversation.contactName || conversation.phone, listHtml, chatHtml, conversation.id));
 });
 
 adminRouter.post('/conversas/:id/send', requireSession, async (req, res) => {
-  const conversation = getConversation(req.params.id);
   const body = String(req.body?.body ?? '').trim();
 
-  if (!conversation || !body) {
+  if (!body) {
     return res.redirect('/conversas');
   }
 
-  try {
-    const result = await sendWhatsAppTextMessage({ to: conversation.waId, text: body });
-    addOutboundMessage(conversation.waId, body, result.messages?.[0]?.id);
-  } catch (error) {
-    console.error('Falha ao enviar mensagem real pelo WhatsApp Cloud API', error);
-    const errorMessage =
-      error instanceof WhatsAppCloudApiError
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : 'Erro desconhecido ao enviar pela Cloud API.';
-    addOutboundMessage(conversation.waId, `${body}\n\nErro Meta: ${errorMessage}`, undefined, 'failed');
-  }
+  await sendConversationMessage(req.params.id, body).catch((error) => {
+    console.error('Falha ao processar envio pelo painel', error);
+  });
 
-  return res.redirect(`/conversas/${encodeURIComponent(conversation.id)}`);
+  return res.redirect(`/conversas/${encodeURIComponent(req.params.id)}`);
 });
 
 adminRouter.get('/usuarios', requireSession, (_req, res) => {
