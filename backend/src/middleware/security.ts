@@ -6,13 +6,19 @@ import { env } from '../config.js';
 
 const require = createRequire(import.meta.url);
 
-type HelmetFactory = () => RequestHandler;
+type HelmetFactory = (options?: unknown) => RequestHandler;
 type RateLimitFactory = (options?: Partial<RateLimitOptions>) => RequestHandler;
 
 const helmet = require('helmet') as HelmetFactory;
 const rateLimit = require('express-rate-limit') as RateLimitFactory;
 
-export const helmetMiddleware = helmet();
+export const helmetMiddleware = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      "script-src": ["'self'", "'unsafe-inline'"]
+    }
+  }
+});
 
 export const corsMiddleware = cors({
   origin: env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
