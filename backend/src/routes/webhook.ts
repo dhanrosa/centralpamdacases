@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { env } from '../config.js';
+import { ingestWhatsAppWebhook } from '../whatsapp-store.js';
 
 export const webhookRouter = Router();
 
@@ -28,5 +29,6 @@ webhookRouter.get('/', handleWebhookVerification);
 
 webhookRouter.post('/', (req, res) => {
   console.log('WhatsApp webhook POST received', JSON.stringify(req.body, null, 2));
-  return res.sendStatus(200);
+  ingestWhatsAppWebhook(req.body);
+  return res.status(200).json({ received: true });
 });

@@ -1,45 +1,23 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import { sendWhatsAppTextMessage } from './services/whatsapp.js';
+import { addOutboundMessage, getConversation, listConversations, storeStats } from './whatsapp-store.js';
 
 const sessionCookie = 'central_pamda_session';
 const sessionValue = 'central-pamda-admin-session';
 const adminUsername = 'dhanrosa';
 const adminPassword = 'dan!1311';
 
-const conversations = [
-  {
-    id: '1',
-    name: 'Maria Oliveira',
-    phone: '+55 11 90000-1001',
-    lastMessage: 'Boa tarde, gostaria de acompanhar meu pedido.',
-    time: 'Hoje 14:22',
-    status: 'aberto'
-  },
-  {
-    id: '2',
-    name: 'Carlos Lima',
-    phone: '+55 21 98888-4422',
-    lastMessage: 'Obrigado pelo retorno!',
-    time: 'Hoje 12:08',
-    status: 'pendente'
-  },
-  {
-    id: '3',
-    name: 'Pamela Rocha',
-    phone: '+55 31 97777-3300',
-    lastMessage: 'Resolvido, muito obrigada.',
-    time: 'Ontem 17:40',
-    status: 'finalizado'
-  }
-];
-
-const messages = [
-  { direction: 'received', text: 'Ola, preciso de ajuda com meu atendimento.', time: '14:18' },
-  { direction: 'sent', text: 'Boa tarde! Claro, vou verificar para voce.', time: '14:19' },
-  { direction: 'received', text: 'Gostaria de acompanhar meu pedido.', time: '14:22' }
-];
-
 export const adminRouter = Router();
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 function parseCookies(header: string | undefined) {
   return Object.fromEntries(
@@ -231,58 +209,78 @@ adminRouter.post('/api/logout', (req, res) => {
 });
 
 adminRouter.get('/dashboard', requireSession, (_req, res) => {
+  const stats = storeStats();
   return res.type('html').send(page('Dashboard', `<section class="page">
     <header class="page-header"><div><h1>Dashboard</h1><p class="muted">Resumo operacional do atendimento.</p></div></header>
     <div class="grid">
       <article class="card"><span>Backend</span><strong>Online</strong></article>
       <article class="card"><span>Webhook WhatsApp</span><strong>Ativo</strong></article>
-      <article class="card"><span>Total de conversas</span><strong>${conversations.length}</strong></article>
-      <article class="card"><span>Mensagens recebidas</span><strong>24</strong></article>
+      <article class="card"><span>Total de conversas</span><strong>${stats.totalConversations}</strong></article>
+      <article class="card"><span>Mensagens recebidas</span><strong>${stats.receivedMessages}</strong></article>
     </div>
   </section>`, 'dashboard'));
 });
 
 adminRouter.get('/conversas', requireSession, (_req, res) => {
+  const conversations = listConversations();
   return res.type('html').send(page('Conversas', `<section class="page">
-    <header class="page-header"><div><h1>Conversas</h1><p class="muted">Fila inicial com dados mockados.</p></div></header>
-    ${conversations
-      .map(
-        (item) => `<a class="conversation" href="/conversas/${item.id}">
-          <div><strong>${item.name}</strong><br><span class="muted">${item.phone}</span></div>
-          <p class="muted">${item.lastMessage}</p>
-          <div><span class="muted">${item.time}</span><br><span class="badge ${item.status}">${item.status}</span></div>
+    <header class="page-header"><div><h1>Conversas</h1><p class="muted">Mensagens recebidas via WhatsApp Cloud API.</p></div></header>
+    ${
+      conversations.length
+        ? conversations
+            .map(
+              (item) => `<a class="conversation" href="/conversas/${encodeURIComponent(item.id)}">
+          <div><strong>${escapeHtml(item.name)}</strong><br><span class="muted">${escapeHtml(item.phone)}</span></div>
+          <p class="muted">${escapeHtml(item.lastMessage)}</p>
+          <div><span class="muted">${escapeHtml(item.time)}</span><br><span class="badge ${item.status}">${item.status}</span></div>
         </a>`
-      )
-      .join('')}
+            )
+            .join('')
+        : '<div class="panel"><p class="muted">Nenhuma conversa recebida ainda. Envie uma mensagem para o numero conectado ao WhatsApp Cloud API.</p></div>'
+    }
   </section>`, 'conversas'));
 });
 
 adminRouter.get('/conversas/:id', requireSession, (req, res) => {
-  const conversation = conversations.find((item) => item.id === req.params.id) ?? conversations[0];
+  const conversation = getConversation(req.params.id);
+  if (!conversation) {
+    return res.status(404).type('html').send(page('Conversa nao encontrada', `<section class="page">
+      <header class="page-header"><div><h1>Conversa nao encontrada</h1><p class="muted">Esta conversa ainda nao existe neste runtime.</p></div></header>
+      <a class="primary" href="/conversas">Voltar</a>
+    </section>`, 'conversas'));
+  }
+
   return res.type('html').send(page('Conversa', `<section class="page chat">
-    <header class="page-header"><div><h1>${conversation.name}</h1><p class="muted">${conversation.phone}</p></div><span class="badge ${conversation.status}">${conversation.status}</span></header>
+    <header class="page-header"><div><h1>${escapeHtml(conversation.name)}</h1><p class="muted">${escapeHtml(conversation.phone)}</p></div><span class="badge ${conversation.status}">${conversation.status}</span></header>
     <div id="messages" class="messages">
-      ${messages.map((item) => `<article class="message ${item.direction}"><p>${item.text}</p><span>${item.time}</span></article>`).join('')}
+      ${conversation.messages
+        .map((item) => `<article class="message ${item.direction === 'sent' ? 'sent' : ''}"><p>${escapeHtml(item.text)}</p><span>${escapeHtml(item.time)}${item.status ? ` - ${escapeHtml(item.status)}` : ''}</span></article>`)
+        .join('')}
     </div>
-    <form id="composer" class="composer">
-      <textarea id="reply" placeholder="Digite uma resposta"></textarea>
+    <form id="composer" class="composer" method="post" action="/conversas/${encodeURIComponent(conversation.id)}/send">
+      <textarea id="reply" name="body" placeholder="Digite uma resposta"></textarea>
       <button class="primary" type="submit">Enviar</button>
     </form>
-  </section>
-  <script>
-    document.getElementById('composer').addEventListener('submit', function (event) {
-      event.preventDefault();
-      var input = document.getElementById('reply');
-      var text = input.value.trim();
-      if (!text) return;
-      var article = document.createElement('article');
-      article.className = 'message sent';
-      article.innerHTML = '<p>' + text.replace(/</g, '&lt;') + '</p><span>agora</span>';
-      document.getElementById('messages').appendChild(article);
-      input.value = '';
-      article.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    });
-  </script>`, 'conversas'));
+  </section>`, 'conversas'));
+});
+
+adminRouter.post('/conversas/:id/send', requireSession, async (req, res) => {
+  const conversation = getConversation(req.params.id);
+  const body = String(req.body?.body ?? '').trim();
+
+  if (!conversation || !body) {
+    return res.redirect('/conversas');
+  }
+
+  try {
+    const result = await sendWhatsAppTextMessage({ to: conversation.waId, text: body });
+    addOutboundMessage(conversation.waId, body, result.messages?.[0]?.id);
+  } catch (error) {
+    console.error('Falha ao enviar mensagem real pelo WhatsApp Cloud API', error);
+    addOutboundMessage(conversation.waId, `${body} (falha no envio pela Cloud API)`);
+  }
+
+  return res.redirect(`/conversas/${encodeURIComponent(conversation.id)}`);
 });
 
 adminRouter.get('/usuarios', requireSession, (_req, res) => {
