@@ -146,6 +146,101 @@ function page(title: string, body: string, active = '') {
 </html>`;
 }
 
+function initials(name: string) {
+  return escapeHtml(name.trim().slice(0, 1).toUpperCase() || 'P');
+}
+
+function whatsappShell(title: string, listHtml: string, chatHtml: string) {
+  return `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title} - Central Pamda Cases</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #111b16;
+        color: #e9edef;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; overflow: hidden; }
+      a { color: inherit; text-decoration: none; }
+      button, input, textarea { font: inherit; }
+      .wa-app { height: 100vh; display: grid; grid-template-columns: 56px 380px minmax(0, 1fr); background: #111b16; }
+      .rail { background: #202c26; border-right: 1px solid #263832; display: flex; flex-direction: column; align-items: center; padding: 10px 8px; gap: 14px; }
+      .rail a, .rail button { width: 40px; height: 40px; border: 0; border-radius: 999px; display: grid; place-items: center; background: transparent; color: #aebac1; cursor: pointer; }
+      .rail a.active, .rail a:hover, .rail button:hover { background: #2a3933; color: #00a884; }
+      .rail .bottom { margin-top: auto; }
+      .wa-list { background: #111b16; border-right: 1px solid #263832; min-width: 0; display: grid; grid-template-rows: auto auto 1fr; }
+      .wa-list-header { padding: 20px 20px 12px; display: flex; align-items: center; justify-content: space-between; }
+      .wa-list-header h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
+      .wa-search { margin: 0 16px 10px; background: #202c26; border-radius: 999px; padding: 10px 14px; color: #aebac1; }
+      .wa-search input { width: 100%; border: 0; outline: 0; background: transparent; color: #e9edef; }
+      .wa-items { overflow: auto; padding: 4px 8px 12px; }
+      .wa-item { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; }
+      .wa-item:hover, .wa-item.active { background: #2a2f2d; }
+      .avatar { width: 48px; height: 48px; border-radius: 999px; display: grid; place-items: center; background: #6b5328; color: #fff2c8; font-weight: 800; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+      .wa-item strong { display: block; color: #f3f5f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .preview, .time { color: #aebac1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .status-pill { display: inline-flex; justify-content: center; min-width: 72px; margin-top: 6px; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; }
+      .aberto { background: #005c4b; color: #d9fff5; }
+      .pendente { background: #7a5f16; color: #fff3c4; }
+      .finalizado { background: #33423c; color: #d7e4df; }
+      .wa-chat { min-width: 0; display: grid; grid-template-rows: 66px 1fr auto; background: #0b1410; }
+      .chat-header { background: #202c26; border-bottom: 1px solid #263832; display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; }
+      .chat-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .chat-person strong { display: block; color: #f3f5f6; }
+      .chat-person span { color: #aebac1; font-size: 13px; }
+      .chat-actions { color: #aebac1; display: flex; gap: 18px; font-size: 22px; }
+      .chat-bg { position: relative; overflow: auto; padding: 28px 8%; background-color: #0b1410; }
+      .chat-bg::before { content: ""; position: fixed; inset: 66px 0 62px 436px; pointer-events: none; opacity: .18; background-image:
+        url("data:image/svg+xml,%3Csvg width='240' height='240' viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23d9eee6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='58' cy='58' r='20'/%3E%3Ccircle cx='42' cy='38' r='8'/%3E%3Ccircle cx='74' cy='38' r='8'/%3E%3Ccircle cx='50' cy='56' r='4'/%3E%3Ccircle cx='66' cy='56' r='4'/%3E%3Cpath d='M56 65 q2 4 6 0'/%3E%3Cpath d='M142 26 c18 30 18 64 0 102'/%3E%3Cpath d='M156 22 c18 34 18 72 0 116'/%3E%3Cpath d='M130 58 h36 M128 88 h40 M130 118 h36'/%3E%3Cpath d='M32 150 c28-8 54 0 76 24'/%3E%3Cpath d='M48 162 c8-18 24-30 48-36'/%3E%3Cpath d='M166 170 c18-22 38-28 58-18 c-20 4-34 16-42 36 c-4-10-10-16-16-18z'/%3E%3Cpath d='M28 214 h184'/%3E%3Cpath d='M108 190 c16-12 34-12 52 0'/%3E%3C/g%3E%3C/svg%3E");
+        background-size: 240px 240px; }
+      .day { width: max-content; margin: 0 auto 20px; background: #1f2c26; color: #aebac1; border-radius: 8px; padding: 6px 12px; font-size: 12px; position: relative; }
+      .secure { width: min(520px, 100%); margin: 0 auto 28px; text-align: center; background: #182d36; color: #6fe6d2; border-radius: 8px; padding: 10px 14px; font-size: 12px; position: relative; }
+      .bubble { position: relative; max-width: min(62%, 720px); width: max-content; min-width: 92px; margin-bottom: 10px; border-radius: 8px; padding: 8px 10px 6px; box-shadow: 0 1px 1px rgba(0,0,0,.22); }
+      .bubble.received { background: #202c26; color: #e9edef; }
+      .bubble.sent { background: #005c4b; color: #e9edef; margin-left: auto; }
+      .bubble p { margin: 0 0 4px; white-space: pre-wrap; word-break: break-word; }
+      .bubble span { display: block; color: #b7c5c0; font-size: 11px; text-align: right; }
+      .composer { background: #202c26; padding: 10px 14px; display: grid; grid-template-columns: 42px 1fr 46px; gap: 10px; align-items: end; }
+      .composer .plus, .composer button { border: 0; background: transparent; color: #aebac1; font-size: 28px; cursor: pointer; }
+      textarea { width: 100%; min-height: 42px; max-height: 120px; resize: vertical; border: 0; outline: 0; border-radius: 8px; padding: 12px 14px; background: #2a3942; color: #e9edef; }
+      .empty-chat { height: 100%; display: grid; place-items: center; text-align: center; color: #aebac1; padding: 24px; }
+      @media (max-width: 900px) {
+        body { overflow: auto; }
+        .wa-app { min-height: 100vh; height: auto; grid-template-columns: 1fr; }
+        .rail { flex-direction: row; justify-content: center; }
+        .rail .bottom { margin-top: 0; margin-left: auto; }
+        .wa-list { min-height: 360px; }
+        .chat-bg::before { inset: 0; }
+        .wa-chat { min-height: 70vh; }
+        .bubble { max-width: 86%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wa-app">
+      <aside class="rail">
+        <a class="active" href="/conversas" title="Conversas">☘</a>
+        <a href="/dashboard" title="Dashboard">⌂</a>
+        <a href="/usuarios" title="Usuarios">◎</a>
+        <a href="/configuracoes" title="Configuracoes">⚙</a>
+        <form class="bottom" method="post" action="/api/logout"><button title="Sair">↩</button></form>
+      </aside>
+      <section class="wa-list">
+        <header class="wa-list-header"><h1>Conversas</h1><span>⋮</span></header>
+        <label class="wa-search"><input placeholder="Pesquisar ou começar uma nova conversa" /></label>
+        <div class="wa-items">${listHtml}</div>
+      </section>
+      <section class="wa-chat">${chatHtml}</section>
+    </div>
+  </body>
+</html>`;
+}
+
 function landingPage(req: Request, res: Response) {
   if (req.query['hub.mode'] || req.query['hub.verify_token'] || req.query['hub.challenge']) {
     return false;
@@ -223,45 +318,54 @@ adminRouter.get('/dashboard', requireSession, (_req, res) => {
 
 adminRouter.get('/conversas', requireSession, (_req, res) => {
   const conversations = listConversations();
-  return res.type('html').send(page('Conversas', `<section class="page">
-    <header class="page-header"><div><h1>Conversas</h1><p class="muted">Mensagens recebidas via WhatsApp Cloud API.</p></div></header>
-    ${
-      conversations.length
-        ? conversations
-            .map(
-              (item) => `<a class="conversation" href="/conversas/${encodeURIComponent(item.id)}">
-          <div><strong>${escapeHtml(item.name)}</strong><br><span class="muted">${escapeHtml(item.phone)}</span></div>
-          <p class="muted">${escapeHtml(item.lastMessage)}</p>
-          <div><span class="muted">${escapeHtml(item.time)}</span><br><span class="badge ${item.status}">${item.status}</span></div>
-        </a>`
-            )
-            .join('')
-        : '<div class="panel"><p class="muted">Nenhuma conversa recebida ainda. Envie uma mensagem para o numero conectado ao WhatsApp Cloud API.</p></div>'
-    }
-  </section>`, 'conversas'));
+  const listHtml = conversations.length
+    ? conversations
+        .map(
+          (item) => `<a class="wa-item" href="/conversas/${encodeURIComponent(item.id)}">
+            <div class="avatar">${initials(item.name)}</div>
+            <div><strong>${escapeHtml(item.name)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
+            <div><div class="time">${escapeHtml(item.time)}</div><span class="status-pill ${item.status}">${item.status}</span></div>
+          </a>`
+        )
+        .join('')
+    : '<div class="preview" style="padding:18px">Nenhuma conversa recebida ainda.</div>';
+  const chatHtml = `<div class="empty-chat"><div><h2>Central Pamda Cases</h2><p>Selecione uma conversa para iniciar o atendimento.</p><p>O fundo do chat combina elementos de panda e bambu.</p></div></div>`;
+  return res.type('html').send(whatsappShell('Conversas', listHtml, chatHtml));
 });
 
 adminRouter.get('/conversas/:id', requireSession, (req, res) => {
   const conversation = getConversation(req.params.id);
   if (!conversation) {
-    return res.status(404).type('html').send(page('Conversa nao encontrada', `<section class="page">
-      <header class="page-header"><div><h1>Conversa nao encontrada</h1><p class="muted">Esta conversa ainda nao existe neste runtime.</p></div></header>
-      <a class="primary" href="/conversas">Voltar</a>
-    </section>`, 'conversas'));
+    return res.redirect('/conversas');
   }
 
-  return res.type('html').send(page('Conversa', `<section class="page chat">
-    <header class="page-header"><div><h1>${escapeHtml(conversation.name)}</h1><p class="muted">${escapeHtml(conversation.phone)}</p></div><span class="badge ${conversation.status}">${conversation.status}</span></header>
-    <div id="messages" class="messages">
+  const conversations = listConversations();
+  const listHtml = conversations
+    .map(
+      (item) => `<a class="wa-item ${item.id === conversation.id ? 'active' : ''}" href="/conversas/${encodeURIComponent(item.id)}">
+        <div class="avatar">${initials(item.name)}</div>
+        <div><strong>${escapeHtml(item.name)}</strong><div class="preview">${escapeHtml(item.lastMessage || item.phone)}</div></div>
+        <div><div class="time">${escapeHtml(item.time)}</div><span class="status-pill ${item.status}">${item.status}</span></div>
+      </a>`
+    )
+    .join('');
+  const chatHtml = `<header class="chat-header">
+      <div class="chat-person"><div class="avatar">${initials(conversation.name)}</div><div><strong>${escapeHtml(conversation.name)}</strong><span>${escapeHtml(conversation.phone)}</span></div></div>
+      <div class="chat-actions"><span>⌕</span><span>⋮</span></div>
+    </header>
+    <div class="chat-bg">
+      <div class="day">Hoje</div>
+      <div class="secure">Esta empresa usa a WhatsApp Cloud API oficial da Meta para gerenciar esta conversa.</div>
       ${conversation.messages
-        .map((item) => `<article class="message ${item.direction === 'sent' ? 'sent' : ''}"><p>${escapeHtml(item.text)}</p><span>${escapeHtml(item.time)}${item.status ? ` - ${escapeHtml(item.status)}` : ''}</span></article>`)
+        .map((item) => `<article class="bubble ${item.direction === 'sent' ? 'sent' : 'received'}"><p>${escapeHtml(item.text)}</p><span>${escapeHtml(item.time)}${item.status ? ` ✓ ${escapeHtml(item.status)}` : ''}</span></article>`)
         .join('')}
     </div>
-    <form id="composer" class="composer" method="post" action="/conversas/${encodeURIComponent(conversation.id)}/send">
-      <textarea id="reply" name="body" placeholder="Digite uma resposta"></textarea>
-      <button class="primary" type="submit">Enviar</button>
-    </form>
-  </section>`, 'conversas'));
+    <form class="composer" method="post" action="/conversas/${encodeURIComponent(conversation.id)}/send">
+      <div class="plus">+</div>
+      <textarea name="body" placeholder="Digite uma mensagem"></textarea>
+      <button type="submit">➤</button>
+    </form>`;
+  return res.type('html').send(whatsappShell(conversation.name, listHtml, chatHtml));
 });
 
 adminRouter.post('/conversas/:id/send', requireSession, async (req, res) => {
