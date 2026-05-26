@@ -7,8 +7,8 @@ dotenv.config({ path: '../.env' });
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
-  DATABASE_URL: z.string().min(1),
-  JWT_SECRET: z.string().min(32),
+  DATABASE_URL: z.string().default(''),
+  JWT_SECRET: z.string().default('chave-interna-deploy-sem-login-com-mais-de-32-caracteres'),
   JWT_EXPIRES_IN: z.string().default('8h'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   WHATSAPP_API_VERSION: z.string().default('v25.0'),

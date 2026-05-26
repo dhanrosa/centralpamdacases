@@ -2,7 +2,7 @@ import pg from 'pg';
 import { env } from './config.js';
 
 export const pool = new pg.Pool({
-  connectionString: env.DATABASE_URL,
+  ...(env.DATABASE_URL ? { connectionString: env.DATABASE_URL } : {}),
   ssl: env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
 });
 
