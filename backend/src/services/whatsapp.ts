@@ -26,16 +26,17 @@ function normalizePhoneNumber(value: string) {
 
 function validateConfig() {
   const token = env.WHATSAPP_TOKEN || env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = env.PHONE_NUMBER_ID || env.WHATSAPP_PHONE_NUMBER_ID;
 
   if (!token) {
     throw new WhatsAppCloudApiError('WHATSAPP_TOKEN ausente nas variaveis de ambiente.');
   }
 
-  if (!env.WHATSAPP_PHONE_NUMBER_ID) {
-    throw new WhatsAppCloudApiError('WHATSAPP_PHONE_NUMBER_ID ausente nas variaveis de ambiente.');
+  if (!phoneNumberId) {
+    throw new WhatsAppCloudApiError('PHONE_NUMBER_ID ausente nas variaveis de ambiente.');
   }
 
-  return { token, phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID };
+  return { token, phoneNumberId };
 }
 
 export async function sendWhatsAppTextMessage({ to, text }: SendTextParams) {
@@ -48,7 +49,7 @@ export async function sendWhatsAppTextMessage({ to, text }: SendTextParams) {
     });
   }
 
-  const url = `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`;
+  const url = `https://graph.facebook.com/${env.WHATSAPP_API_VERSION}/${phoneNumberId}/messages`;
   const requestBody = {
     messaging_product: 'whatsapp',
     to: normalizedTo,

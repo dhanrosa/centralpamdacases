@@ -5,6 +5,7 @@ import { adminRouter, renderLandingPage } from './admin-panel.js';
 import { authRouter } from './routes/auth.js';
 import { conversationsRouter } from './routes/conversations.js';
 import { messagesRouter } from './routes/messages.js';
+import { sendMessageRouter } from './routes/send-message.js';
 import { settingsRouter } from './routes/settings.js';
 import { usersRouter } from './routes/users.js';
 import { handleWebhookVerification, webhookRouter } from './routes/webhook.js';
@@ -47,6 +48,7 @@ app.use('/api/webhook', webhookRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/messages', messagesRouter);
+app.use('/api/send-message', sendMessageRouter);
 app.use('/api/settings', settingsRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

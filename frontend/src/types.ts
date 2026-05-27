@@ -49,3 +49,25 @@ export interface Note {
   author_name: string | null;
   created_at: string;
 }
+
+export interface SimpleConversa {
+  id: string;
+  phone: string;
+  name: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimpleMensagem {
+  id: string;
+  conversa_id: string;
+  phone: string;
+  direction: 'inbound' | 'outbound';
+  type: string;
+  body: string | null;
+  meta_message_id: string | null;
+  status: string | null;
+  created_at: string;
+}
