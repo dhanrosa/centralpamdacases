@@ -514,6 +514,24 @@ textarea {
   padding: 0 18px 14px;
 }
 
+.test-tools {
+  display: grid;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+
+.test-tools span {
+  color: #16845c;
+  font-size: 13px;
+}
+
+.test-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .inbox-list {
   min-height: 0;
   overflow: auto;

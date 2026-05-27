@@ -7,6 +7,7 @@ import { conversationsRouter } from './routes/conversations.js';
 import { messagesRouter } from './routes/messages.js';
 import { sendMessageRouter } from './routes/send-message.js';
 import { settingsRouter } from './routes/settings.js';
+import { testSupabaseRouter } from './routes/test-supabase.js';
 import { usersRouter } from './routes/users.js';
 import { handleWebhookVerification, webhookRouter } from './routes/webhook.js';
 import { apiLimiter, corsMiddleware, helmetMiddleware } from './middleware/security.js';
@@ -50,6 +51,7 @@ app.use('/api/conversations', conversationsRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/send-message', sendMessageRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/test-supabase', testSupabaseRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) {

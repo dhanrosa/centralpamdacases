@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { sendWhatsAppTextMessage } from '../services/whatsapp.js';
 import { requireAuth } from '../middleware/auth.js';
-import { normalizePhone, requireSupabaseAdmin, upsertConversa } from '../supabase.js';
+import { insertMensagem, normalizePhone, upsertConversa } from '../supabase.js';
 
 export const sendMessageRouter = Router();
 
@@ -24,31 +24,30 @@ sendMessageRouter.post('/', async (req, res, next) => {
 
     const result = await sendWhatsAppTextMessage({ to: phone, text: input.text });
     const metaMessageId = result.messages?.[0]?.id ?? null;
+    console.log('WhatsApp message sent successfully', { phone, metaMessageId });
+
     const conversa = await upsertConversa({
       phone,
       lastMessage: input.text,
       lastMessageAt: new Date().toISOString()
     });
 
-    const supabase = requireSupabaseAdmin();
-    const { data, error } = await supabase
-      .from('mensagens')
-      .insert({
-        conversa_id: conversa.id,
-        phone,
-        direction: 'outbound',
-        type: 'text',
-        body: input.text,
-        meta_message_id: metaMessageId,
-        status: 'sent',
-        raw: result
-      })
-      .select('*')
-      .single();
+    const data = await insertMensagem({
+      conversaId: conversa.id,
+      phone,
+      direction: 'outbound',
+      type: 'text',
+      body: input.text,
+      metaMessageId,
+      status: 'sent',
+      raw: result
+    });
 
-    if (error) {
-      throw error;
-    }
+    console.log('Outbound message saved in Supabase', {
+      conversaId: conversa.id,
+      phone,
+      metaMessageId
+    });
 
     return res.status(201).json({ conversa, message: data });
   } catch (error) {

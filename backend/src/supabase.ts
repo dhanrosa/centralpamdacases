@@ -46,6 +46,13 @@ export function normalizePhone(value: string) {
   return value.replace(/\D/g, '');
 }
 
+export function logSupabaseError(operation: string, error: unknown, details?: unknown) {
+  console.error(`Supabase error: ${operation}`, {
+    error,
+    details
+  });
+}
+
 export async function upsertConversa(params: {
   phone: string;
   name?: string | null;
@@ -69,8 +76,65 @@ export async function upsertConversa(params: {
     .single<Conversa>();
 
   if (error) {
+    logSupabaseError('upsert conversas', error, payload);
     throw error;
   }
 
   return data;
+}
+
+export async function insertMensagem(params: {
+  conversaId: string;
+  phone: string;
+  direction: 'inbound' | 'outbound';
+  type?: string;
+  body?: string | null;
+  metaMessageId?: string | null;
+  status?: string | null;
+  raw?: unknown;
+  createdAt?: string;
+}) {
+  const supabase = requireSupabaseAdmin();
+  const payload = {
+    conversa_id: params.conversaId,
+    phone: params.phone,
+    direction: params.direction,
+    type: params.type ?? 'text',
+    body: params.body ?? null,
+    meta_message_id: params.metaMessageId ?? null,
+    status: params.status ?? null,
+    raw: params.raw ?? null,
+    ...(params.createdAt ? { created_at: params.createdAt } : {})
+  };
+
+  const { data, error } = await supabase.from('mensagens').insert(payload).select('*').single<Mensagem>();
+
+  if (error) {
+    logSupabaseError('insert mensagens', error, payload);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function createSupabaseTestMessage() {
+  const phone = `550000000${Date.now().toString().slice(-4)}`;
+  const text = `Teste Supabase ${new Date().toISOString()}`;
+  const conversa = await upsertConversa({
+    phone,
+    name: 'Teste Supabase',
+    lastMessage: text,
+    lastMessageAt: new Date().toISOString()
+  });
+  const message = await insertMensagem({
+    conversaId: conversa.id,
+    phone,
+    direction: 'inbound',
+    type: 'text',
+    body: text,
+    status: 'test',
+    raw: { source: 'api/test-supabase' }
+  });
+
+  return { conversa, message };
 }

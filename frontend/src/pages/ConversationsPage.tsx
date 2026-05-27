@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { MessageCircle, Plus, Search, Send, X } from 'lucide-react';
+import { Database, MessageCircle, Plus, Search, Send, X } from 'lucide-react';
 import { apiFetch } from '../api';
 import { supabase } from '../supabase';
 import type { SimpleConversa, SimpleMensagem } from '../types';
@@ -33,6 +33,8 @@ export function ConversationsPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [testResult, setTestResult] = useState('');
+  const [testingSupabase, setTestingSupabase] = useState(false);
 
   const selectedConversa = selected?.kind === 'existing' ? selected.conversa : null;
   const selectedPhone = selected?.kind === 'new' ? selected.phone : selectedConversa?.phone ?? '';
@@ -168,6 +170,26 @@ export function ConversationsPage() {
     }
   }
 
+  async function testSupabase() {
+    setTestingSupabase(true);
+    setError('');
+    setTestResult('');
+
+    try {
+      const response = await apiFetch<{ conversa: SimpleConversa }>('/test-supabase', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      setTestResult(`Supabase OK: mensagem fake salva para ${response.conversa.phone}.`);
+      setSelected({ kind: 'existing', conversa: response.conversa });
+      await Promise.all([loadConversas(), loadMensagens(response.conversa.id)]);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha no teste do Supabase.');
+    } finally {
+      setTestingSupabase(false);
+    }
+  }
+
   return (
     <section className="inbox">
       <aside className="inbox-sidebar">
@@ -185,6 +207,14 @@ export function ConversationsPage() {
           <Search size={18} aria-hidden />
           <input placeholder="Buscar" value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
+
+        <div className="test-tools">
+          <button className="secondary-button test-button" onClick={testSupabase} disabled={testingSupabase}>
+            <Database size={16} aria-hidden />
+            {testingSupabase ? 'Testando...' : 'Testar Supabase'}
+          </button>
+          {testResult && <span>{testResult}</span>}
+        </div>
 
         {showNew && (
           <form className="new-chat-form" onSubmit={startConversation}>

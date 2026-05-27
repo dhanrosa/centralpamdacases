@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { env } from '../config.js';
-import { requireSupabaseAdmin, normalizePhone, upsertConversa } from '../supabase.js';
+import { insertMensagem, normalizePhone, upsertConversa } from '../supabase.js';
 
 export const webhookRouter = Router();
 
@@ -9,21 +8,25 @@ export function handleWebhookVerification(req: Request, res: Response) {
   console.log('Webhook verification request received', {
     mode: req.query['hub.mode'],
     hasVerifyToken: Boolean(req.query['hub.verify_token']),
+    hasExpectedToken: Boolean(process.env.VERIFY_TOKEN),
     challenge: req.query['hub.challenge']
   });
 
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
-  const verifyToken = env.VERIFY_TOKEN || env.WHATSAPP_VERIFY_TOKEN;
+  const verifyToken = process.env.VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken && typeof challenge === 'string') {
     console.log('Webhook verified successfully');
     return res.status(200).type('text/plain').send(challenge);
   }
 
-  console.log('Webhook verification failed');
+  console.log('Webhook verification failed', {
+    mode,
+    tokenMatches: token === verifyToken,
+    challengeType: typeof challenge
+  });
   return res.sendStatus(403);
 }
 
@@ -43,69 +46,76 @@ function extractMessageBody(message: any) {
 }
 
 async function ingestWebhookPayload(payload: any) {
-  const supabase = requireSupabaseAdmin();
-  const changes = payload?.entry?.flatMap((entry: any) => entry.changes ?? []) ?? [];
+  const entries = payload?.entry ?? [];
   let foundMessages = 0;
 
   console.log('Meta webhook processing started', {
-    entries: payload?.entry?.length ?? 0,
-    changes: changes.length
+    entries: entries.length,
+    changes: entries.reduce((total: number, entry: any) => total + (entry?.changes?.length ?? 0), 0)
   });
 
-  for (const change of changes) {
-    const value = change?.value;
-    const contacts = value?.contacts ?? [];
-    const messages = value?.messages ?? [];
-    const statuses = value?.statuses ?? [];
+  for (const entry of entries) {
+    const changes = entry?.changes ?? [];
 
-    if (statuses.length > 0) {
-      console.log('Meta webhook statuses received', { count: statuses.length });
-    }
+    for (const change of changes) {
+      const value = change?.value;
+      const contacts = value?.contacts ?? [];
+      const messages = value?.messages ?? [];
+      const statuses = value?.statuses ?? [];
 
-    for (const message of messages) {
-      const phone = normalizePhone(String(message.from ?? ''));
-      if (!phone) {
-        console.log('Meta webhook message ignored without phone', { id: message?.id });
-        continue;
+      if (statuses.length > 0) {
+        console.log('Meta webhook statuses received', { count: statuses.length });
       }
 
-      foundMessages += 1;
-      const contact = contacts.find((item: any) => normalizePhone(String(item?.wa_id ?? '')) === phone);
-      const name = contact?.profile?.name ? String(contact.profile.name) : null;
-      const type = String(message.type ?? 'text');
-      const body = extractMessageBody(message);
-      const createdAt = isoFromMetaTimestamp(message.timestamp);
-      const metaMessageId = message.id ? String(message.id) : null;
+      for (const message of messages) {
+        const phone = normalizePhone(String(message.from ?? ''));
+        if (!phone) {
+          console.log('Meta webhook message ignored without phone', { id: message?.id });
+          continue;
+        }
 
-      const conversa = await upsertConversa({
-        phone,
-        name,
-        lastMessage: body,
-        lastMessageAt: createdAt
-      });
+        foundMessages += 1;
+        const contact = contacts.find((item: any) => normalizePhone(String(item?.wa_id ?? '')) === phone) ?? contacts[0];
+        const name = contact?.profile?.name ? String(contact.profile.name) : null;
+        const type = String(message.type ?? 'text');
+        const body = extractMessageBody(message);
+        const createdAt = isoFromMetaTimestamp(message.timestamp);
+        const metaMessageId = message.id ? String(message.id) : null;
 
-      const { error } = await supabase.from('mensagens').insert({
-        conversa_id: conversa.id,
-        phone,
-        direction: 'inbound',
-        type,
-        body,
-        meta_message_id: metaMessageId,
-        status: 'received',
-        raw: message,
-        created_at: createdAt
-      });
+        console.log('Meta webhook message extracted', {
+          phone,
+          name,
+          type,
+          body,
+          metaMessageId
+        });
 
-      if (error) {
-        throw error;
+        const conversa = await upsertConversa({
+          phone,
+          name,
+          lastMessage: body,
+          lastMessageAt: createdAt
+        });
+
+        await insertMensagem({
+          conversaId: conversa.id,
+          phone,
+          direction: 'inbound',
+          type,
+          body,
+          metaMessageId,
+          status: 'received',
+          raw: message,
+          createdAt
+        });
+
+        console.log('Meta webhook inbound message saved', {
+          conversaId: conversa.id,
+          phone,
+          type,
+          metaMessageId
+        });
       }
-
-      console.log('Meta webhook inbound message saved', {
-        conversaId: conversa.id,
-        phone,
-        type,
-        metaMessageId
-      });
     }
   }
 
@@ -117,6 +127,7 @@ webhookRouter.post('/', (req, res) => {
     object: req.body?.object,
     entries: req.body?.entry?.length ?? 0
   });
+  console.log(JSON.stringify(req.body, null, 2));
 
   res.status(200).json({ received: true });
 
